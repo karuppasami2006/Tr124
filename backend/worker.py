@@ -1,7 +1,12 @@
 from celery import Celery
 import os
-from .scanner import HybridScanner
-from .models import SessionLocal, ScanResult
+from scanner import HybridScanner
+try:
+    from models import SessionLocal, ScanResult
+except ImportError:
+    # Fallback for demo without DB
+    SessionLocal = None
+    ScanResult = None
 import asyncio
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")

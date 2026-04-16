@@ -1,10 +1,10 @@
 import re
 import asyncio
 from typing import List, Dict, Any
-from .dependency_parser import parse_requirements, parse_package_json
-from .cve_fetcher import NVDClient
-from .ai_analyzer import AIAnalyzer
-from .risk_engine import calculate_risk
+from dependency_parser import parse_requirements, parse_package_json
+from cve_fetcher import NVDClient
+from ai_analyzer import AIAnalyzer
+from risk_engine import calculate_risk
 
 class HybridScanner:
     def __init__(self):

@@ -1,12 +1,10 @@
-import google.generativeai as genai
+from google import genai
 import os
 import json
 from dotenv import load_dotenv
 
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
 
 AI_PROMPT = """
 You are a senior DevSecOps Security Researcher. 
@@ -25,8 +23,14 @@ Output ONLY JSON matching this structure:
 """
 
 class AIAnalyzer:
+    def __init__(self):
+        if GEMINI_API_KEY:
+            self.client = genai.Client(api_key=GEMINI_API_KEY)
+        else:
+            self.client = None
+
     async def analyze(self, vuln_info: str, context: str) -> dict:
-        if not GEMINI_API_KEY:
+        if not self.client:
             return {
                 "explanation": "AI Analysis unavailable (Missing Key).",
                 "root_cause": "Detection based on static rules.",
@@ -36,11 +40,15 @@ class AIAnalyzer:
             }
 
         try:
-            response = await model.generate_content_async(
-                AI_PROMPT.format(vuln_info=vuln_info, context=context)
+            # Note: client.models.generate_content is normally synchronous in the current SDK 
+            # unless using a specific async wrapper or if it's the newer async version
+            response = self.client.models.generate_content(
+                model="gemini-1.5-flash",
+                contents=AI_PROMPT.format(vuln_info=vuln_info, context=context)
             )
             return self._parse_json(response.text)
         except Exception as e:
+            print(f"AI Error: {e}")
             return {"error": str(e)}
 
     def _parse_json(self, text: str) -> dict:

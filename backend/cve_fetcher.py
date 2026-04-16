@@ -53,7 +53,7 @@ class NVDClient:
         
         if not cves:
             # Fallback to local intelligence if NVD is slow/blocked
-            from .cve_fetcher_fallback import LOCAL_THREAT_INTEL
+            from cve_fetcher_fallback import LOCAL_THREAT_INTEL
             return LOCAL_THREAT_INTEL.get(package, {}).get(version)
             
         # Select most relevant high-severity CVE

@@ -14,7 +14,7 @@ class HybridScanner:
     async def scan(self, code_diff: str, dep_content: str, dep_type: str = "requirements") -> Dict[str, Any]:
         vulnerabilities = []
         
-        # 1. Dependency Scan (Integrated NVD + Fallback)
+        # 1. Dependency Scan
         if dep_content:
             deps = parse_requirements(dep_content) if dep_type == "requirements" else parse_package_json(dep_content)
             for d in deps:
@@ -24,16 +24,26 @@ class HybridScanner:
                         "type": "dependency",
                         "id": f"dep-{d['package']}",
                         "file_or_package": d['package'],
-                        "current_version": d['version'],
-                        "safe_version": vuln['safe_version'],
-                        "cve_id": vuln['cve_id'],
+                        "title": f"Vulnerable Dependency: {d['package']}",
                         "severity": vuln['severity'],
-                        "cvss_score": vuln['cvss_score'],
-                        "description": vuln['description'],
-                        "fix": f"Upgrade {d['package']} to {vuln['safe_version']}"
+                        "confidence": 0.9,
+                        "explanation": vuln['description'],
+                        "fix": {"before": f"{d['package']}=={d['version']}", "after": f"{d['package']}=={vuln['safe_version']}"},
+                        "fix_steps": [f"Update {d['package']} to version {vuln['safe_version']}"],
+                        "cve_id": vuln['cve_id']
                     })
 
-        # 2. Code Scan (Rule-Based + AI Analysis)
+        # 2. Advanced AI Audit (Reasoning-based)
+        ai_result = await self.ai.full_audit(code_diff)
+        ai_vulns = ai_result.get("vulnerabilities", [])
+        
+        for v in ai_vulns:
+            # Map AI fields to internal structure if needed
+            v["id"] = f"ai-{v.get('type', 'vuln').lower().replace(' ', '-')}"
+            vulnerabilities.append(v)
+
+        # 3. Rule-Based Fallback (High-Confidence patterns)
+        # We only add if AI missed it (simple deduplication by type/line)
         code_rules = [
             {"name": "SQL Injection", "regex": r"execute\(.*['\"].*\+.*['\"].*\)", "severity": "High"},
             {"name": "Hardcoded Secret", "regex": r"(API_KEY|TOKEN|SECRET)\s*=\s*['\"][a-zA-Z0-9]{10,}['\"]", "severity": "High"},
@@ -42,37 +52,27 @@ class HybridScanner:
 
         for rule in code_rules:
             if re.search(rule['regex'], code_diff, re.IGNORECASE):
-                # Manual Mapping based on Industry CWEs
-                vulnerabilities.append({
-                    "type": "code",
-                    "id": f"code-{rule['name'].lower().replace(' ', '-')}",
-                    "file_or_package": "source_code",
-                    "title": rule['name'],
-                    "severity": rule['severity'],
-                    "cve_id": f"CWE-{'89' if 'SQL' in rule['name'] else '798' if 'Secret' in rule['name'] else '94'}",
-                    "cvss_score": 9.8 if rule['severity'] == "Critical" else 8.5,
-                    "description": f"Dynamic analysis confirmed {rule['name']} pattern in changed lines."
-                })
+                # Check if AI already found an issue of this type
+                if not any(v.get('type') == rule['name'] for v in vulnerabilities):
+                    vulnerabilities.append({
+                        "type": "code",
+                        "id": f"rule-{rule['name'].lower().replace(' ', '-')}",
+                        "file_or_package": "source_code",
+                        "title": rule['name'],
+                        "severity": rule['severity'],
+                        "confidence": 0.8,
+                        "explanation": f"Pattern-based detection identified a potential {rule['name']}.",
+                        "fix": {"before": "...", "after": "Use parameterized inputs or environment variables."},
+                        "fix_steps": ["Refactor the code to use secure patterns"]
+                    })
 
-        # 3. AI Enrichment (Async for performance)
-        enrichment_tasks = []
-        for v in vulnerabilities:
-            if v['type'] == 'code':
-                enrichment_tasks.append(self.ai.analyze(v['title'], code_diff))
-            else:
-                enrichment_tasks.append(self.ai.analyze(f"{v['file_or_package']} version {v['current_version']}", v['description']))
-
-        if enrichment_tasks:
-            results = await asyncio.gather(*enrichment_tasks)
-            for i, res in enumerate(results):
-                vulnerabilities[i].update(res)
-
-        # 4. Risk Decision
+        # 4. Global Risk Assessment
         risk = calculate_risk(vulnerabilities)
 
         return {
             "scan_summary": {
                 "total_issues": len(vulnerabilities),
+                "confidence": ai_result.get("scan_summary", {}).get("confidence", 0.7),
                 "critical": risk['counts']['Critical'],
                 "high": risk['counts']['High'],
                 "medium": risk['counts']['Medium'],

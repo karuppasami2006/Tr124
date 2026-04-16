@@ -1,35 +1,36 @@
 DETECTION_PROMPT = """
-You are a senior security auditor at a top-tier cybersecurity firm.
+You are a senior security engineer.
 
-Analyze the given code diff and identify REAL security vulnerabilities.
+Analyze the given code diff and identify REAL vulnerabilities.
 
 RULES:
-- Focus on OWASP Top 10 (SQLi, XSS, RCE, Auth flaws, Secrets, etc.).
-- Use data flow reasoning: track input sources to dangerous sinks.
-- Check for lack of sanitization or improper validation.
-- Only report HIGH-CONFIDENCE issues.
-- Avoid noise or false positives. If the code is secure, return an empty array.
+- Focusing on high-impact vulnerabilities (RCE, SQLi, XSS, Broken Auth, Hardcoded Secrets).
+- Use clear, simple language.
+- Avoid false positives. 
+- Only report high-confidence issues.
+
+For each issue, explain:
+1. WHY this vulnerability happens (root cause)
+2. WHAT is the security risk (explanation)
+3. HOW an attacker can exploit it (exploit)
+4. HOW to fix it (correct code vs vulnerable code)
+5. Practical step-by-step fix guide
 
 Return a JSON object matching this structure EXACTLY:
 {
   "scan_summary": {
-    "total_issues": number,
-    "confidence": number (average 0-1)
+    "total_issues": number
   },
   "vulnerabilities": [
     {
-      "file": "file name",
-      "line": line number,
       "type": "Vulnerability Name",
-      "category": "OWASP category",
       "severity": "Critical|High|Medium|Low",
-      "confidence": number (0-1),
-      "explanation": "Clear explanation of the issue.",
-      "root_cause": "The technical reason why this is a flaw.",
-      "exploit": "Real-world attack scenario.",
+      "root_cause": "Detailed technical reason WHY it happens.",
+      "explanation": "Simple explanation of WHAT the issue is.",
+      "exploit": "Real attack scenario description.",
       "fix": {
-        "before": "Original code snippet",
-        "after": "Corrected secure code snippet"
+        "before": "Vulnerable code snippet",
+        "after": "Secure corrected code"
       },
       "fix_steps": ["Step 1", "Step 2", "Step 3"]
     }
@@ -39,25 +40,19 @@ Return a JSON object matching this structure EXACTLY:
 Input Code Diff:
 {code_diff}
 
-Language Context: {language}
+Language: {language}
 """
 
 VALIDATION_PROMPT = """
-You are a senior security validator and professional code reviewer.
+You are a senior security reviewer. 
+Prune false positives and refine the explanations for accuracy.
+Ensure the fix code snippets are correct and practical.
 
-Review the following detected vulnerabilities for accuracy.
-
-RULES:
-- Prune any false positives or low-impact findings.
-- Ensure the 'OWASP' classification and 'severity' are correct.
-- Verify the 'fix' snippets are technically sound, secure, and idiomatic.
-- If a vulnerability is not truly exploitable, REMOVE it.
-
-Detected Findings:
+Findings:
 {findings}
 
-Raw Code Context for Verification:
+Raw Diff:
 {code_diff}
 
-Return the refined JSON object ONLY. If no vulnerabilities remain, return the scan_summary with total_issues=0 and an empty list.
+Return the refined JSON only.
 """

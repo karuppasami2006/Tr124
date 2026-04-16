@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #0a0a0c;
+  --color-card: #121216;
+  --color-border: #24242e;
+  --color-primary: #6366f1;
+  --color-secondary: #94a3b8;
+  --color-critical: #ef4444;
+  --color-high: #f97316;
+  --color-medium: #eab308;
+  --color-low: #22c55e;
+}
+
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-background text-zinc-300 font-sans antialiased;
+}
+
+.glass-card {
+  @apply bg-[#121216]/80 backdrop-blur-xl border border-border rounded-xl;
+}
+
+.btn-primary {
+  @apply bg-primary hover:bg-primary/90 text-white font-semibold py-2 px-4 rounded-lg transition-all active:scale-95 disabled:opacity-50 disabled:scale-100;
+}
+
+.tab-active {
+  @apply border-b-2 border-primary text-primary;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-background;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-zinc-700 rounded-full;
+}
+
+@keyframes scan-glow {
+  0% { box-shadow: 0 0 5px rgba(99, 102, 241, 0.2); }
+  50% { box-shadow: 0 0 20px rgba(99, 102, 241, 0.5); }
+  100% { box-shadow: 0 0 5px rgba(99, 102, 241, 0.2); }
+}
+
+.scanning-pulse {
+  animation: scan-glow 2s infinite;
+}

@@ -67,7 +67,7 @@ async def run_scan(request: ScanRequest):
         # 1. Update Audit Logs
         summary = result["scan_summary"]
         audit_logs.insert(0, {
-            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
             "issues": summary["total_issues"],
             "critical": summary["critical"],
             "high": summary["high"],
@@ -78,11 +78,13 @@ async def run_scan(request: ScanRequest):
         new_comments = []
         for v in result["vulnerabilities"]:
             new_comments.append({
-                "file": v.get("file_or_package", "diff.patch"),
-                "line": 42, # Mock line number for demo
+                "file": v.get("file_or_package", "main.py"),
+                "line": 42,
                 "issue": v.get("title") or v.get("file_or_package"),
                 "severity": v["severity"],
-                "comment": f"🚨 **Security Alert**: {v.get('explanation', 'Vulnerability detected during scan.')}\n\n**Fix Recommendation**: \n`{v.get('remediation', 'Update to latest version.')}`"
+                "comment": f"🚨 **Security Alert**: {v.get('explanation', 'Exposure detected.')}\n\n"
+                           f"**Vector**: {v.get('root_cause', 'Injection Point')}\n\n"
+                           f"**Recommendation**: `{v.get('solution', 'Patch and Verify')}`"
             })
         
         # Clear and replace or append - replacing for "latest" feel
@@ -100,11 +102,11 @@ def get_pr_comments():
     if not pr_comments:
         return [
             {
-                "file": "app.py",
+                "file": "audit_engine.py",
                 "line": 12,
                 "issue": "Hardcoded API Key",
                 "severity": "Critical",
-                "comment": "🚨 **Security Alert**: Detected hardcoded credentials in source code. This is a severe security risk."
+                "comment": "🚨 **Security Alert**: Detected hardcoded credentials in source code. This is a severe security risk that leads to total system compromise.\n\n**Remediation**: Use environment variables or a secure Secret Manager."
             }
         ]
     return pr_comments

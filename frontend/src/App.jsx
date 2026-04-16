@@ -69,9 +69,11 @@ export default function App() {
     fetchTopCVEs();
   }, []);
 
+  const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:8000' : '/api';
+
   const fetchTopCVEs = async () => {
     try {
-      const response = await axios.get('http://localhost:8000/cves/top');
+      const response = await axios.get(`${API_BASE}/cves/top`);
       setTopCVEs(response.data);
     } catch (error) {
        console.error("Failed to fetch top CVEs", error);
@@ -81,7 +83,7 @@ export default function App() {
   const loadCVEDetail = async (cveId) => {
     try {
       setPipelineStep('nvd');
-      const response = await axios.get(`http://localhost:8000/cves/$\{cveId}`);
+      const response = await axios.get(`${API_BASE}/cves/${cveId}`);
       setSelectedCVE(response.data);
     } catch (error) {
        alert("Error loading CVE intelligence.");
@@ -101,7 +103,7 @@ export default function App() {
     }
 
     try {
-      const response = await axios.post('http://localhost:8000/scan', {
+      const response = await axios.post(`${API_BASE}/scan`, {
         code_diff: codeDiff,
         language: "python",
         dependency_content: depContent,

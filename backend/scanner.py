@@ -45,13 +45,14 @@ class HybridScanner:
         # 3. Rule-Based Fallback (High-Confidence patterns)
         # We only add if AI missed it (simple deduplication by type/line)
         code_rules = [
-            {"name": "SQL Injection", "regex": r"execute\(.*['\"].*\+.*['\"].*\)", "severity": "High"},
-            {"name": "Hardcoded Secret", "regex": r"(API_KEY|TOKEN|SECRET)\s*=\s*['\"][a-zA-Z0-9]{10,}['\"]", "severity": "High"},
-            {"name": "Unsafe Exec", "regex": r"exec\(|eval\(", "severity": "Critical"}
+            {"name": "SQL Injection", "regex": r"execute\(.*['\"].*\+.*['\"].*\)", "severity": "High", "before": "execute(\"", "after": "execute(\"%s\", (param,))"},
+            {"name": "Hardcoded Secret", "regex": r"(API_KEY|TOKEN|SECRET)\s*=\s*['\"][a-zA-Z0-9]{10,}['\"]", "severity": "High", "before": "API_KEY =", "after": "API_KEY = os.getenv('API_KEY')"},
+            {"name": "Unsafe Exec", "regex": r"exec\(|eval\(", "severity": "Critical", "before": "eval(", "after": "# Unsafe eval() removed"}
         ]
 
         for rule in code_rules:
-            if re.search(rule['regex'], code_diff, re.IGNORECASE):
+            match = re.search(rule['regex'], code_diff, re.IGNORECASE)
+            if match:
                 # Check if AI already found an issue of this type
                 if not any(v.get('type') == rule['name'] for v in vulnerabilities):
                     vulnerabilities.append({
@@ -62,9 +63,10 @@ class HybridScanner:
                         "severity": rule['severity'],
                         "confidence": 0.8,
                         "explanation": f"Pattern-based detection identified a potential {rule['name']}.",
-                        "fix": {"before": "...", "after": "Use parameterized inputs or environment variables."},
-                        "fix_steps": ["Refactor the code to use secure patterns"]
+                        "fix": {"before": rule['before'], "after": rule['after']},
+                        "fix_steps": ["Refactor the code to use secure patterns", "Follow security best practices"]
                     })
+
 
         # 4. Global Risk Assessment
         risk = calculate_risk(vulnerabilities)

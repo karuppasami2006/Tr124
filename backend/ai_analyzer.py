@@ -76,23 +76,23 @@ class AIAnalyzer:
 
     def _mock_response(self) -> dict:
         return {
-            "scan_summary": {"total_issues": 1, "confidence": 0.9},
+            "scan_summary": {"total_issues": 1, "confidence": 0.9, "ci_status": "FAIL"},
             "vulnerabilities": [
                 {
-                    "file": "app.py",
-                    "line": 15,
+                    "id": "ai-sql-injection-mock",
                     "type": "SQL Injection",
                     "category": "A03:2021-Injection",
-                    "severity": "High",
+                    "severity": "Critical",
                     "confidence": 0.95,
-                    "explanation": "Simulated: User input 'id' is directly concatenated into a SQL string.",
-                    "root_cause": "Untrusted input reaching a database sink without parameterization.",
-                    "exploit": "Attacker provides '1 OR 1=1' as 'id' to bypass authentication.",
+                    "explanation": "User input is directly concatenated into a SQL string without sanitization or parameterization.",
+                    "root_cause": "String concatenation in database query sink.",
+                    "exploit": "Attacker can bypass login by providing ' OR '1'='1 as input.",
                     "fix": {
-                        "before": "query = 'SELECT * FROM users WHERE id=' + user_id",
-                        "after": "query = 'SELECT * FROM users WHERE id=%s'\ncursor.execute(query, (user_id,))"
+                        "before": "db.execute(\"SELECT * FROM entries WHERE id = \" + user_id)",
+                        "after": "db.execute(\"SELECT * FROM entries WHERE id = %s\", (user_id,))"
                     },
-                    "fix_steps": ["Switch to parameterized queries", "Sanitize all user inputs", "Use an ORM like SQLAlchemy"]
+                    "fix_steps": ["Switch to parameterized queries", "Use database-specific placeholders", "Validate input type before query"]
                 }
             ]
         }
+

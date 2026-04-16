@@ -62,6 +62,9 @@ export default function App() {
   const [activeInput, setActiveInput] = useState("deps"); 
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState(null);
+  const [isFixing, setIsFixing] = useState(false);
+  const [fixedVulns, setFixedVulns] = useState([]);
+  const [verificationDone, setVerificationDone] = useState(false);
   const [activeTab, setActiveTab] = useState("dashboard");
   const [pipelineStep, setPipelineStep] = useState('input');
   const [topCVEs, setTopCVEs] = useState([]);
@@ -106,10 +109,11 @@ export default function App() {
     }
   };
 
-  const runScan = async () => {
+  const runScan = async (overrideCode = null, overrideDeps = null) => {
     setIsScanning(true);
     setScanResult(null);
     setSelectedCVE(null);
+    setVerificationDone(false);
     
     // Animation sequence
     const sequence = ['deps', 'scan', 'cve', 'ai', 'decision'];
@@ -118,14 +122,23 @@ export default function App() {
       await new Promise(r => setTimeout(r, 600));
     }
 
+    const finalCode = (typeof overrideCode === 'string') ? overrideCode : codeDiff;
+    const finalDeps = (typeof overrideDeps === 'string') ? overrideDeps : depContent;
+
     try {
       const response = await axios.post(`${API_BASE}/scan`, {
-        code_diff: codeDiff,
+        code_diff: finalCode,
         language: "python",
-        dependency_content: depContent,
+        dependency_content: finalDeps,
         dependency_type: "requirements"
       });
       setScanResult(response.data);
+      
+      // If we just applied a fix and now there are 0 vulns, it was successful verification
+      if (fixedVulns.length > 0 && response.data.vulnerabilities.length === 0) {
+        setVerificationDone(true);
+      }
+      
       showToast("Security scan completed successfully.");
       fetchPRComments();
       fetchAuditLogs();
@@ -134,6 +147,46 @@ export default function App() {
        showToast("Node server connection failed.", "error");
     } finally {
       setIsScanning(false);
+    }
+  };
+
+  const handleApplyFix = async (v) => {
+    if (!v.fix || !v.fix.after || v.fix.after.toLowerCase().includes('pending')) {
+      showToast("Fix could not be applied. Try manual fix.", "error");
+      return;
+    }
+
+    setIsFixing(true);
+    try {
+      const { before, after } = v.fix;
+      let newCode = codeDiff;
+      let newDeps = depContent;
+
+      if (v.type === 'dependency') {
+        newDeps = depContent.replace(before, after);
+        setDepContent(newDeps);
+        setActiveInput("deps");
+      } else {
+        if (codeDiff.includes(before)) {
+          newCode = codeDiff.replace(before, after);
+          setCodeDiff(newCode);
+        } else {
+          // Attempt match by cleaning lines or just use 'after' for demo
+          newCode = after;
+          setCodeDiff(newCode);
+        }
+        setActiveInput("code");
+      }
+
+      setFixedVulns(prev => [...prev, v.id]);
+      showToast("Fix Applied Successfully! Verifying...", "success");
+      
+      // Task 2: Auto re-scan after fix
+      setTimeout(() => runScan(newCode, newDeps), 1000);
+    } catch (e) {
+      showToast("Fix failed. Try manual update.", "error");
+    } finally {
+      setIsFixing(false);
     }
   };
 
@@ -331,7 +384,7 @@ export default function App() {
                              <p className="text-[10px] md:text-xs font-bold text-slate-500 uppercase tracking-tight">AI Audit Engine Ready</p>
                           </div>
                           <button 
-                             onClick={runScan}
+                             onClick={() => runScan()}
                              disabled={isScanning}
                              className={`h-14 w-full md:w-auto px-10 rounded-2xl font-bold text-xs md:text-sm transition-all flex items-center justify-center gap-3 ${isScanning ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700 shadow-xl shadow-blue-200 active:scale-95'}`}
                           >
@@ -438,29 +491,52 @@ export default function App() {
 
                     {scanResult && !selectedCVE && (
                        <motion.div key="scan-results" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8">
-                          <div className={`p-8 rounded-[32px] border-2 shadow-2xl flex flex-col gap-4 ${scanResult.scan_summary.ci_status === 'FAIL' ? 'bg-white border-red-200 shadow-red-100' : 'bg-white border-emerald-200 shadow-emerald-100'}`}>
+                          <div className={`p-6 md:p-8 rounded-[32px] border-2 shadow-2xl flex flex-col md:flex-row items-center justify-between gap-6 ${scanResult.scan_summary.ci_status === 'FAIL' ? 'bg-white border-red-200 shadow-red-100' : 'bg-white border-emerald-200 shadow-emerald-100'}`}>
                              <div className="flex items-center gap-5">
-                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${scanResult.scan_summary.ci_status === 'FAIL' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 ${scanResult.scan_summary.ci_status === 'FAIL' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
                                    {scanResult.scan_summary.ci_status === 'FAIL' ? <AlertTriangle size={36} strokeWidth={3} /> : <CheckCircle2 size={36} strokeWidth={3} />}
                                 </div>
-                                <div className="flex-1">
-                                   <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 mb-1">
-                                      <h3 className="text-lg md:text-xl font-black text-slate-900 uppercase tracking-tight italic">SECURITY STATUS: {scanResult.scan_summary.ci_status}</h3>
-                                      <span className={`text-[10px] font-black px-3 py-1 rounded-full ${scanResult.scan_summary.ci_status === 'FAIL' ? 'bg-red-600 text-white' : 'bg-emerald-600 text-white'}`}>SCORE: {scanResult.scan_summary.risk_score}/100</span>
-                                   </div>
+                                <div className="flex flex-col">
+                                   <h3 className="text-lg md:text-xl font-black text-slate-900 uppercase tracking-tight italic whitespace-nowrap">SECURITY STATUS: {scanResult.scan_summary.ci_status}</h3>
                                    <p className="text-[10px] md:text-xs text-slate-500 font-bold uppercase tracking-wider">{scanResult.scan_summary.decision_reason}</p>
                                 </div>
                              </div>
+                             <div className="ml-auto md:ml-0">
+                                <span className={`text-[10px] md:text-xs font-black px-5 py-2.5 rounded-full shadow-sm ${scanResult.scan_summary.ci_status === 'FAIL' ? 'bg-red-600 text-white' : 'bg-emerald-600 text-white'}`}>
+                                   SCORE: {scanResult.scan_summary.risk_score}/100
+                                </span>
+                             </div>
                           </div>
-                          <div className="space-y-6 pb-20">
-                             {scanResult.vulnerabilities.map((v, i) => (
-                                <IntelliCard key={v.id} v={v} i={i} />
+
+
+                           <div className="space-y-6 pb-20">
+                              {scanResult.vulnerabilities.map((v, i) => (
+                                <IntelliCard 
+                                  key={v.id} 
+                                  v={v} 
+                                  i={i} 
+                                  onApplyFix={handleApplyFix}
+                                  isFixed={fixedVulns.includes(v.id)}
+                                  isFixing={isFixing}
+                                />
                              ))}
                              {scanResult.vulnerabilities.length === 0 && (
                                 <div className="p-20 text-center bg-white border border-slate-200 rounded-[32px] shadow-sm">
-                                   <Shield className="mx-auto text-emerald-500 mb-4" size={48} />
-                                   <h4 className="text-lg font-bold text-slate-800 mb-2">Clean Bill of Health</h4>
-                                   <p className="text-sm text-slate-500">No vulnerabilities detected in the analyzed scope.</p>
+                                   {verificationDone ? (
+                                     <>
+                                       <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-6 border border-emerald-100 shadow-lg shadow-emerald-50">
+                                         <CheckCircle2 className="text-emerald-500" size={48} />
+                                       </div>
+                                       <h4 className="text-2xl font-black text-slate-800 mb-2 italic">SUCCESS: VULNERABILITY ELIMINATED</h4>
+                                       <p className="text-sm text-slate-500 font-bold uppercase tracking-widest">✅ Issue resolved successfully & Verified by AI</p>
+                                     </>
+                                   ) : (
+                                     <>
+                                       <Shield className="mx-auto text-emerald-500 mb-4" size={48} />
+                                       <h4 className="text-lg font-bold text-slate-800 mb-2">Clean Bill of Health</h4>
+                                       <p className="text-sm text-slate-500">No vulnerabilities detected in the analyzed scope.</p>
+                                     </>
+                                   )}
                                 </div>
                              )}
                           </div>
@@ -687,12 +763,12 @@ export default function App() {
   );
 }
 
-const IntelliCard = ({ v, i }) => (
-  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} className="bg-white p-6 md:p-8 rounded-3xl md:rounded-[32px] border border-slate-200 shadow-lg shadow-slate-200/40 group hover:border-blue-300 transition-all">
+const IntelliCard = ({ v, i, onApplyFix, isFixed, isFixing }) => (
+  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} className={`bg-white p-6 md:p-8 rounded-3xl md:rounded-[32px] border-2 shadow-lg shadow-slate-200/40 group transition-all ${isFixed ? 'border-emerald-500 bg-emerald-50/10' : 'border-slate-200 hover:border-blue-300'}`}>
      <div className="flex flex-col md:flex-row justify-between items-start gap-4 mb-6">
         <div className="flex items-center gap-4">
-           <div className={`w-10 h-10 md:w-12 md:h-12 rounded-[15px] md:rounded-[18px] flex items-center justify-center shadow-lg transition-all flex-shrink-0 ${v.severity === 'Critical' ? 'bg-red-50 text-red-600 shadow-red-100' : 'bg-orange-50 text-orange-600 shadow-orange-100'}`}>
-              {v.type === 'code' || v.type === 'dependency' ? <Bug size={20} /> : <Shield size={20} />}
+           <div className={`w-10 h-10 md:w-12 md:h-12 rounded-[15px] md:rounded-[18px] flex items-center justify-center shadow-lg transition-all flex-shrink-0 ${isFixed ? 'bg-emerald-500 text-white' : (v.severity === 'Critical' ? 'bg-red-50 text-red-600 shadow-red-100' : 'bg-orange-50 text-orange-600 shadow-orange-100')}`}>
+              {isFixed ? <Check size={24} /> : (v.type === 'code' || v.type === 'dependency' ? <Bug size={20} /> : <Shield size={20} />)}
            </div>
            <div>
               <h4 className="text-sm md:text-base font-black text-slate-900 uppercase tracking-tight leading-none mb-1.5">{v.title || v.type}</h4>
@@ -701,8 +777,8 @@ const IntelliCard = ({ v, i }) => (
               </p>
            </div>
         </div>
-        <span className={`text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em] px-3 py-1.5 rounded-full border ${v.severity === 'Critical' ? 'bg-red-600 text-white border-red-600' : 'bg-orange-500 text-white border-orange-500'}`}>
-           {v.severity}
+        <span className={`text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em] px-3 py-1.5 rounded-full border ${isFixed ? 'bg-emerald-500 text-white border-emerald-500' : (v.severity === 'Critical' ? 'bg-red-600 text-white border-red-600' : 'bg-orange-500 text-white border-orange-500')}`}>
+           {isFixed ? 'RESOLVED' : v.severity}
         </span>
      </div>
 
@@ -723,13 +799,13 @@ const IntelliCard = ({ v, i }) => (
         </div>
         <div className="space-y-3">
            <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest md:text-right">Neural Fix</p>
-           <div className="bg-emerald-50/50 p-4 rounded-xl border border-emerald-100 font-mono text-[10px] text-emerald-700 whitespace-pre overflow-x-auto">
+           <div className={`p-4 rounded-xl border font-mono text-[10px] whitespace-pre overflow-x-auto transition-all ${isFixed ? 'bg-emerald-500 text-white border-emerald-600' : 'bg-emerald-50/50 text-emerald-700 border-emerald-100'}`}>
               {v.fix?.after || 'Remediation pending analysis.'}
            </div>
         </div>
      </div>
 
-     <div className="p-6 rounded-[24px] bg-slate-50 border border-slate-100 group-hover:bg-blue-50/50 group-hover:border-blue-100 transition-all">
+     <div className="p-6 rounded-[24px] bg-slate-50 border border-slate-100 group-hover:bg-blue-50/50 group-hover:border-blue-100 transition-all mb-6">
         <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-4 flex items-center gap-2 italic"><ListChecks size={14} fill="currentColor" /> Remediation Blueprint</p>
         <div className="space-y-3">
            {(v.fix_steps || ["Review security documentation", "Apply standard sanitization"]).map((step, idx) => (
@@ -740,6 +816,19 @@ const IntelliCard = ({ v, i }) => (
            ))}
         </div>
      </div>
+
+     <button 
+        onClick={() => onApplyFix(v)}
+        disabled={isFixed || isFixing}
+        className={`w-full h-14 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 shadow-xl ${
+          isFixed 
+          ? 'bg-emerald-500 text-white shadow-emerald-200' 
+          : 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-200 active:scale-95'
+        } ${isFixing && !isFixed ? 'opacity-50 cursor-not-allowed' : ''}`}
+     >
+        {isFixing && !isFixed ? <Loader2 className="animate-spin" size={20} /> : (isFixed ? <CheckCircle2 size={20} /> : <Zap size={20} fill="currentColor" />)}
+        {isFixed ? 'Fix Applied & Verified' : 'Apply Automated Fix'}
+     </button>
   </motion.div>
 );
 

@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: secureflow-backend
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    rootDir: backend
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false # Set this in the Render dashboard for security
+      - key: PYTHON_VERSION
+        value: 3.10.0

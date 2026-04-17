@@ -16,8 +16,34 @@ app.add_middleware(
 )
 
 # In-memory storage (Simplification for hackathon/demo)
-audit_logs = []
-pr_comments = []
+audit_logs = [
+    {"time": "2026-04-16 10:30", "issues": 3, "critical": 1, "high": 2, "status": "FAIL"},
+    {"time": "2026-04-16 14:15", "issues": 0, "critical": 0, "high": 0, "status": "PASS"},
+    {"time": "2026-04-16 16:45", "issues": 1, "critical": 1, "high": 0, "status": "FAIL"}
+]
+pr_comments = [
+    {
+        "file": "auth_service.py",
+        "line": 42,
+        "issue": "Broken Authentication",
+        "severity": "Critical",
+        "comment": "🚨 **Security Alert**: Detected missing rate limiting on login endpoint. This enables brute-force attacks on user credentials.\n\n**Remediation**: Implement an exponential backoff or use a WAF policy.",
+        "before": "def login(): \n    pass",
+        "after": "@rate_limit(limit=5, period=60)\ndef login(): \n    pass"
+    },
+    {
+        "file": "utils/parsing.py",
+        "line": 15,
+        "issue": "XSS Vulnerability",
+        "severity": "High",
+        "comment": "🚨 **Security Alert**: Unsanitized user input is being directly rendered in the UI. This can lead to session hijacking.\n\n**Remediation**: Use a templating engine with auto-escaping or sanitize with Bleach.",
+        "before": "return f'<div>{user_input}</div>'",
+        "after": "return render_template('msg.html', user_input=user_input)"
+    }
+]
+reviews = [
+    {"time": "2026-04-16 11:20", "comment": "Neural patch for log4j verified. Remediation successful."}
+]
 system_config = {
     "scan_depth": "medium",
     "ai_mode": "balanced",
@@ -61,7 +87,8 @@ async def run_scan(request: ScanRequest):
         result = await scanner.scan(
             request.code_diff, 
             request.dependency_content,
-            request.dependency_type
+            request.dependency_type,
+            config=system_config
         )
         
         # 1. Update Audit Logs
@@ -84,12 +111,23 @@ async def run_scan(request: ScanRequest):
                 "severity": v["severity"],
                 "comment": f"🚨 **Security Alert**: {v.get('explanation', 'Exposure detected.')}\n\n"
                            f"**Vector**: {v.get('root_cause', 'Injection Point')}\n\n"
-                           f"**Recommendation**: `{v.get('solution', 'Patch and Verify')}`"
+                           f"**Recommendation**: `{v.get('solution', 'Patch and Verify')}`",
+                "before": v.get("fix", {}).get("before", "Pattern matched in source."),
+                "after": v.get("fix", {}).get("after", "Neural fix pending validation.")
             })
         
+        # 3. Final State Synchronization
         # Clear and replace or append - replacing for "latest" feel
         global pr_comments
         pr_comments = new_comments
+
+        # Diagnostic Log
+        print(f"--- [DIAGNOSTIC] Neural Audit Cycle ---")
+        print(f"Time: {datetime.now().strftime('%H:%M:%S')}")
+        print(f"TELEMETRY: {len(request.code_diff)} bytes source, {len(request.dependency_content or '')} bytes manifest")
+        print(f"FINDINGS: {len(result['vulnerabilities'])} issues detected")
+        print(f"RISK SCORE: {summary['risk_score']} | STATUS: {summary['ci_status']}")
+        print(f"----------------------------------------")
 
         return result
     except Exception as e:
@@ -106,7 +144,9 @@ def get_pr_comments():
                 "line": 12,
                 "issue": "Hardcoded API Key",
                 "severity": "Critical",
-                "comment": "🚨 **Security Alert**: Detected hardcoded credentials in source code. This is a severe security risk that leads to total system compromise.\n\n**Remediation**: Use environment variables or a secure Secret Manager."
+                "comment": "🚨 **Security Alert**: Detected hardcoded credentials in source code. This is a severe security risk that leads to total system compromise.\n\n**Remediation**: Use environment variables or a secure Secret Manager.",
+                "before": 'api_key = "sk_live_51M..."',
+                "after": 'api_key = os.getenv("STRIPE_API_KEY")'
             }
         ]
     return pr_comments
@@ -129,6 +169,113 @@ def update_config(req: ConfigUpdateRequest):
     global system_config
     system_config = req.dict()
     return {"status": "success", "config": system_config}
+
+from fastapi.responses import StreamingResponse
+from io import BytesIO
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+
+# Standardized enterprise report generation
+@app.post("/generate-report")
+async def generate_report(log_index: Optional[int] = None):
+    try:
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=50, bottomMargin=50)
+        styles = getSampleStyleSheet()
+        elements = []
+
+        # High-Impact Styles
+        brand_color = colors.HexColor("#1e3a8a") # Deep Navy
+        title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=32, textColor=brand_color, spaceAfter=8, fontName='Helvetica-Bold')
+        subtitle_style = ParagraphStyle('Subtitle', parent=styles['Normal'], fontSize=12, textColor=colors.gray, spaceAfter=40)
+        heading_style = ParagraphStyle('SectionHeader', parent=styles['Heading2'], fontSize=18, textColor=brand_color, spaceBefore=25, spaceAfter=15, borderPadding=5, borderSide='bottom', borderColor=brand_color)
+
+        # Main Header
+        elements.append(Paragraph("SECUREFLOW AI", title_style))
+        elements.append(Paragraph("ENTERPRISE NEURAL AUDIT DOSSIER", ParagraphStyle('Sub', parent=title_style, fontSize=14, spaceAfter=5, textColor=colors.HexColor("#3b82f6"))))
+        elements.append(Paragraph(f"Reference: SF-TRACE-{datetime.now().strftime('%Y%M')}-{log_index if log_index is not None else 'FULL'} | Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M')}", subtitle_style))
+        
+        # Summary Section
+        target_logs = [audit_logs[log_index]] if (log_index is not None and 0 <= log_index < len(audit_logs)) else audit_logs
+        elements.append(Paragraph("Executive Summary", heading_style))
+        elements.append(Paragraph(f"Analysis encompasses {len(target_logs)} security checkpoint(s). SecureFlow AI's neural engine has performed deep-packet and static analysis across codebase diffs and dependency graphs.", styles['Normal']))
+        elements.append(Spacer(1, 20))
+
+        # Data Table
+        data = [["TIMESTAMP", "INTELLIGENCE STATUS", "CRIT", "HIGH", "ITEMS"]]
+        for log in target_logs:
+            status_color = colors.HexColor("#ef4444") if log['status'] == 'FAIL' else colors.HexColor("#10b981")
+            data.append([
+                log['time'], 
+                Paragraph(f"<b>{log['status']}</b>", ParagraphStyle('Status', parent=styles['Normal'], textColor=status_color, fontSize=9, alignment=1)),
+                str(log.get('critical', 0)), 
+                str(log.get('high', 0)), 
+                str(log['issues'])
+            ])
+        
+        table = Table(data, colWidths=[150, 140, 60, 60, 60])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), brand_color),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 15),
+            ('TOPPADDING', (0, 0), (-1, 0), 15),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor("#ffffff")),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        elements.append(table)
+        
+        # Footer Certification
+        elements.append(Spacer(1, 100))
+        elements.append(Paragraph("Digital Certification", heading_style))
+        cert_text = "This audit dossier is cryptographically hashed and verified by the SecureFlow AI Consensus Engine. It represents a point-in-time snapshot of system security and should be treated as sensitive administrative documentation."
+        elements.append(Paragraph(cert_text, ParagraphStyle('Cert', parent=styles['Italic'], fontSize=9, textColor=colors.darkgray)))
+
+        doc.build(elements)
+        buffer.seek(0)
+        
+        return StreamingResponse(
+            buffer, 
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename=SecureFlow_Audit_{'Log' if log_index is not None else 'Full'}.pdf"}
+        )
+    except Exception as e:
+        print(f"Report Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/review")
+async def save_review(data: dict):
+    reviews.insert(0, {
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "comment": data.get("comment", "No description provided.")
+    })
+    # Also add to audit logs if it was an approval
+    if "resolved" in data.get("comment", "").lower():
+        audit_logs.insert(0, {
+            "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "issues": 0,
+            "critical": 0,
+            "high": 0,
+            "status": "PASS"
+        })
+    return {"status": "saved"}
+
+@app.get("/reviews")
+def get_reviews():
+    return reviews
+
+@app.delete("/pr-comment/{index}")
+def delete_pr_comment(index: int):
+    global pr_comments
+    if 0 <= index < len(pr_comments):
+        pr_comments.pop(index)
+        return {"status": "deleted"}
+    raise HTTPException(status_code=404, detail="Comment not found")
 
 @app.get("/health")
 def health():

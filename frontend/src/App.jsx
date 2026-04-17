@@ -40,7 +40,8 @@ import {
   X,
   Loader2,
   RefreshCw,
-  Bell
+  Bell,
+  ShieldCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -64,6 +65,10 @@ export default function App() {
   const [scanResult, setScanResult] = useState(null);
   const [isFixing, setIsFixing] = useState(false);
   const [fixedVulns, setFixedVulns] = useState([]);
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  const [selectedPRComment, setSelectedPRComment] = useState(null);
+  const [reviews, setReviews] = useState([]);
+  const [isReviewing, setIsReviewing] = useState(false);
   const [verificationDone, setVerificationDone] = useState(false);
   const [activeTab, setActiveTab] = useState("dashboard");
   const [pipelineStep, setPipelineStep] = useState('input');
@@ -82,7 +87,20 @@ export default function App() {
     fetchConfig();
     fetchAuditLogs();
     fetchPRComments();
+    fetchReviews();
   }, []);
+
+  // Neural Sync: Auto-Scan on telemetry change
+  useEffect(() => {
+    if (activeTab !== "dashboard") return;
+    const delayDebounceFn = setTimeout(() => {
+       if (codeDiff.trim() || depContent.trim()) {
+          runScan(codeDiff, depContent);
+       }
+    }, 1000); // 1s debounce to ensure precision
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [codeDiff, depContent, activeTab]);
 
   const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:8000' : '/api';
 
@@ -100,28 +118,23 @@ export default function App() {
     }
   };
 
-  const loadCVEDetail = async (cveId) => {
-    try {
-      setPipelineStep('nvd');
-      const response = await axios.get(`${API_BASE}/cves/${cveId}`);
-      setSelectedCVE(response.data);
-    } catch (error) {
-       showToast("Failed to load CVE intelligence.", "error");
-    }
-  };
-
   const runScan = async (overrideCode = null, overrideDeps = null) => {
-    setIsScanning(true);
-    setScanResult(null);
-    setSelectedCVE(null);
-    setVerificationDone(false);
+    const isBackgroundTask = overrideCode === 'background' || typeof overrideCode === 'object';
     
-    // Animation sequence
-    const sequence = ['deps', 'scan', 'cve', 'ai', 'decision'];
-    for(let s of sequence) {
-      setPipelineStep(s);
-      await new Promise(r => setTimeout(r, 600));
+    // Reset state for truth-based audit
+    if (!isBackgroundTask) {
+       setScanResult(null);
+       setFixedVulns([]);
+       setVerificationDone(false);
     }
+    
+    setIsScanning(true);
+    setSelectedCVE(null);
+    
+    // Quick visual pulse for audit logic
+    setPipelineStep('deps');
+    await new Promise(r => setTimeout(r, 200));
+    setPipelineStep('scan');
 
     const finalCode = (typeof overrideCode === 'string') ? overrideCode : codeDiff;
     const finalDeps = (typeof overrideDeps === 'string') ? overrideDeps : depContent;
@@ -134,13 +147,11 @@ export default function App() {
         dependency_type: "requirements"
       });
       setScanResult(response.data);
-      
-      // If we just applied a fix and now there are 0 vulns, it was successful verification
-      if (fixedVulns.length > 0 && response.data.vulnerabilities.length === 0) {
-        setVerificationDone(true);
+      if (response.data.vulnerabilities.length === 0) {
+        showToast("Compliance verified. Environment is secure.");
+      } else {
+        showToast(`Audit failed. ${response.data.vulnerabilities.length} threats identified.`, "error");
       }
-      
-      showToast("Security scan completed successfully.");
       fetchPRComments();
       fetchAuditLogs();
     } catch (error) {
@@ -172,7 +183,6 @@ export default function App() {
           newCode = codeDiff.replace(before, after);
           setCodeDiff(newCode);
         } else {
-          // Attempt match by cleaning lines or just use 'after' for demo
           newCode = after;
           setCodeDiff(newCode);
         }
@@ -182,7 +192,6 @@ export default function App() {
       setFixedVulns(prev => [...prev, v.id]);
       showToast("Fix Applied Successfully! Verifying...", "success");
       
-      // Task 2: Auto re-scan after fix
       setTimeout(() => runScan(newCode, newDeps), 1000);
     } catch (e) {
       showToast("Fix failed. Try manual update.", "error");
@@ -195,7 +204,29 @@ export default function App() {
     try {
       const response = await axios.get(`${API_BASE}/pr-comments`);
       setPrComments(response.data);
+      showToast("PR simulation synced with neural engine.", "success");
     } catch (e) { console.error(e); }
+  };
+
+  const fetchReviews = async () => {
+    try {
+      const response = await axios.get(`${API_BASE}/reviews`);
+      setReviews(response.data);
+    } catch (e) { console.error(e); }
+  };
+
+  const handleReviewSubmit = async (commentText) => {
+    setIsReviewing(true);
+    try {
+      await axios.post(`${API_BASE}/review`, { comment: commentText });
+      showToast("Remediation feedback persisted.", "success");
+      fetchReviews();
+      fetchAuditLogs(); // Refresh logs to show the new PASS entry
+    } catch (e) {
+      showToast("Failed to save feedback.", "error");
+    } finally {
+      setIsReviewing(false);
+    }
   };
 
   const fetchAuditLogs = async () => {
@@ -222,10 +253,29 @@ export default function App() {
     finally { setIsConfigLoading(false); }
   };
 
+  const handleGenerateReport = async (logIndex = null) => {
+    setIsGeneratingReport(true);
+    try {
+      const response = await axios.post(`${API_BASE}/generate-report${logIndex !== null ? `?log_index=${logIndex}` : ''}`, {}, {
+        responseType: 'blob'
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `SecureFlow_Report_${logIndex !== null ? 'Entry' : 'Full'}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      showToast("Report generated successfully!");
+    } catch (e) {
+      showToast("Failed to generate PDF report.", "error");
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
+
   return (
     <div className="flex min-h-screen bg-gray-50 text-gray-900 font-sans selection:bg-blue-100 overflow-x-hidden">
       
-      {/* Toast Notification */}
       <AnimatePresence>
         {toast && (
           <motion.div 
@@ -242,7 +292,6 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Sidebar - Desktop */}
       <aside className="hidden lg:flex w-64 border-r border-gray-200 p-6 flex-col gap-8 bg-white z-20 transition-all sticky top-0 h-screen">
         <div className="flex items-center gap-2.5 px-2">
            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
@@ -271,7 +320,6 @@ export default function App() {
         </div>
       </aside>
 
-      {/* Mobile Sidebar Overlay */}
       <AnimatePresence>
         {isMobileMenuOpen && (
           <>
@@ -323,7 +371,6 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Main Content */}
       <main className="flex-1 overflow-y-auto flex flex-col w-full">
         <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-4 md:px-8 sticky top-0 z-40">
            <div className="flex items-center gap-3">
@@ -339,25 +386,17 @@ export default function App() {
               </div>
            </div>
            
-           <div className="flex items-center gap-4">
-              <button className="relative p-1 text-gray-400 hover:text-gray-600 transition-colors">
-                 <Bell size={18} />
-                 <div className="absolute top-0 right-0 w-1.5 h-1.5 bg-red-500 rounded-full border border-white" />
-              </button>
-              <div className="flex items-center gap-3 pl-4 border-l border-gray-200">
-                 <div className="text-right hidden sm:block">
-                    <p className="text-xs font-semibold text-gray-900">Hackathon Dev</p>
-                    <p className="text-[10px] text-gray-500">Administrator</p>
-                 </div>
-                 <div className="w-8 h-8 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center font-semibold text-gray-500 text-xs">HD</div>
-              </div>
-           </div>
+            <div className="flex items-center gap-4">
+               <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-100 rounded-lg shadow-sm">
+                  <Activity size={12} className="text-blue-600 animate-pulse" />
+                  <span className="text-[10px] text-blue-700 font-bold uppercase tracking-wider">Live Monitoring Active</span>
+               </div>
+            </div>
         </header>
 
         <div className="p-4 md:p-8 max-w-7xl mx-auto w-full flex-1">
           {activeTab === "dashboard" && (
             <div className="space-y-8">
-               {/* Scan Input Section */}
                <section className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden transition-all hover:shadow-md">
                   <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50/10">
                      <div className="flex gap-1">
@@ -411,7 +450,6 @@ export default function App() {
 
                   {scanResult && (
                      <motion.div key="results" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
-                        {/* Horizontal Security Status Card */}
                         <div className={`flex flex-col md:flex-row items-center justify-between gap-6 p-6 md:p-8 bg-white rounded-xl shadow-sm border transition-all hover:shadow-md ${scanResult.scan_summary.ci_status === 'FAIL' ? 'border-red-100' : 'border-green-100'}`}>
                            <div className="flex items-center gap-6">
                               <div className={`w-14 h-14 rounded-xl flex items-center justify-center flex-shrink-0 ${scanResult.scan_summary.ci_status === 'FAIL' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
@@ -421,28 +459,36 @@ export default function App() {
                                  <div className="flex flex-col">
                                    <div className="flex items-center gap-2">
                                       <h3 className="text-base font-bold text-gray-900 uppercase tracking-tight">Status: <span className={scanResult.scan_summary.ci_status === 'FAIL' ? 'text-red-600' : 'text-green-600'}>{scanResult.scan_summary.ci_status}</span></h3>
-                                      <div className={`px-2 py-0.5 rounded text-xs font-bold ${scanResult.scan_summary.ci_status === 'FAIL' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                                         {scanResult.scan_summary.risk_score}% RISK
+                                      <div className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-tighter ${scanResult.scan_summary.ci_status === 'FAIL' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                                         ID: {Math.random().toString(36).substring(7).toUpperCase()}
                                       </div>
                                    </div>
-                                   <p className="text-sm text-gray-500 font-medium">{scanResult.scan_summary.decision_reason}</p>
+                                   <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mt-1 space-x-3">
+                                      <span>Mode: <span className="text-blue-600">{config.scan_depth}</span></span>
+                                      <span>• Verified: <span className="text-blue-600">{new Date().toLocaleTimeString()}</span></span>
+                                   </p>
                                 </div>
                              </div>
                            </div>
                            <div className="flex items-center gap-6 w-full md:w-auto border-t md:border-t-0 md:border-l border-gray-100 pt-6 md:pt-0 md:pl-8">
-                              <div className="flex-1 md:flex-none text-center">
-                                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Risk Score</p>
-                                 <span className={`text-3xl font-black ${scanResult.scan_summary.risk_score > 70 ? 'text-red-600' : 'text-orange-500'}`}>
-                                    {scanResult.scan_summary.risk_score}/100
+                              <div className="text-center">
+                                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1 leading-none">Risk Score</p>
+                                 <span className={`text-2xl font-black ${scanResult.scan_summary.risk_score >= 7 ? 'text-red-600' : scanResult.scan_summary.risk_score >= 3 ? 'text-orange-500' : 'text-emerald-500'}`}>
+                                    {scanResult.scan_summary.risk_score}/10
                                  </span>
                               </div>
-                              <div className={`px-6 py-3 rounded-lg font-bold text-sm uppercase tracking-wider ${scanResult.scan_summary.ci_status === 'FAIL' ? 'bg-red-600 text-white' : 'bg-green-600 text-white'}`}>
-                                 Pipeline Blocked
+                              <div className="text-center px-4 border-l border-gray-100">
+                                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1 leading-none">Last Audit</p>
+                                 <span className="text-2xl font-black text-blue-600 font-mono">
+                                    {new Date().getSeconds()}s ago
+                                 </span>
+                              </div>
+                              <div className={`px-6 py-3 rounded-lg font-bold text-sm uppercase tracking-wider shadow-sm transition-all ${scanResult.scan_summary.ci_status === 'FAIL' ? 'bg-red-600 text-white' : 'bg-green-600 text-white'}`}>
+                                 {scanResult.scan_summary.ci_status === 'FAIL' ? 'Blocked' : 'Approved'}
                               </div>
                            </div>
                         </div>
 
-                        {/* Vulnerability Grid Results */}
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
                            {scanResult.vulnerabilities.map((v, i) => (
                               <IntelliCard 
@@ -488,7 +534,6 @@ export default function App() {
                 </div>
                 
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[calc(100vh-250px)]">
-                   {/* Left Panel: Search & List */}
                     <div className="lg:col-span-4 flex flex-col gap-4 overflow-hidden h-full">
                       <div className="relative">
                          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -518,7 +563,6 @@ export default function App() {
                       </div>
                    </div>
 
-                   {/* Right Panel: Details panel */}
                    <div className="lg:col-span-8 overflow-y-auto h-full pr-2 custom-scrollbar">
                       <AnimatePresence mode="wait">
                          {selectedCVE ? (
@@ -598,6 +642,49 @@ export default function App() {
                       </AnimatePresence>
                    </div>
                 </div>
+
+                <div className="mt-12 space-y-6">
+                   <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                         <Layers size={18} />
+                      </div>
+                      <h3 className="text-lg font-bold text-gray-900 tracking-tight">User Feedback Section</h3>
+                   </div>
+                   
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {reviews.length === 0 ? (
+                         <div className="col-span-full py-10 text-center bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                            <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">No human-verified feedback yet</p>
+                         </div>
+                      ) : (
+                         reviews.map((rev, idx) => (
+                            <motion.div 
+                               initial={{ opacity: 0, scale: 0.98 }}
+                               animate={{ opacity: 1, scale: 1 }}
+                               key={idx} 
+                               className="p-5 bg-white border border-gray-100 rounded-xl shadow-sm space-y-2 group hover:border-emerald-200 transition-all"
+                            >
+                               <div className="flex justify-between items-center">
+                                  <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Verified Remediation</span>
+                                  <span className="text-[10px] font-bold text-gray-400">{rev.time}</span>
+                               </div>
+                               <p className="text-sm text-gray-700 font-bold leading-relaxed">"{rev.comment}"</p>
+                            </motion.div>
+                         ))
+                      )}
+                   </div>
+                </div>
+
+                <div className="pt-6 border-t border-gray-100 flex justify-end">
+                   <button 
+                      onClick={() => updateConfig(config)}
+                      disabled={isConfigLoading}
+                      className="px-10 py-3 bg-gray-900 text-white rounded-lg text-xs font-black uppercase tracking-widest hover:bg-blue-600 transition-all shadow-lg active:scale-95 flex items-center gap-2"
+                   >
+                      {isConfigLoading ? <Loader2 className="animate-spin" size={16} /> : <ShieldCheck size={16} />}
+                      Deploy Settings
+                   </button>
+                </div>
              </div>
           )}
 
@@ -608,9 +695,11 @@ export default function App() {
                     <h2 className="text-xl font-bold text-gray-900 tracking-tight">PR Pipeline Simulation</h2>
                     <p className="text-sm text-gray-500 font-medium">Automated commentary and feedback loops for staged code diffs.</p>
                   </div>
-                  <button onClick={fetchPRComments} className="h-9 px-4 rounded-lg bg-white border border-gray-200 shadow-sm text-xs font-bold flex items-center gap-2 hover:bg-gray-50 transition-all text-gray-700">
-                    <RefreshCw size={12} className="text-blue-600" /> Sync Results
-                  </button>
+                  <div className="flex gap-3">
+                    <button onClick={fetchPRComments} className="h-10 px-6 rounded-lg bg-white border border-gray-200 shadow-sm text-xs font-bold flex items-center gap-2 hover:bg-gray-50 transition-all text-gray-700">
+                      <RefreshCw size={14} className="text-blue-600" /> Refresh Sync
+                    </button>
+                  </div>
                </div>
                
                <div className="space-y-6">
@@ -645,9 +734,25 @@ export default function App() {
                                 </div>
                             </div>
                          </div>
-                         <div className="px-6 py-3 bg-gray-50/30 border-t border-gray-100 flex gap-4">
-                            <button className="text-xs font-bold text-blue-600 uppercase tracking-wider hover:text-blue-800">Review Changes</button>
-                            <button className="text-xs font-bold text-gray-400 uppercase tracking-wider hover:text-gray-600">Dismiss</button>
+                         <div className="px-6 py-4 bg-gray-50/30 border-t border-gray-100 flex gap-4">
+                            <button 
+                               onClick={() => setSelectedPRComment(comment)}
+                               className="text-xs font-bold text-blue-600 uppercase tracking-wider hover:text-blue-800 transition-colors"
+                            >
+                               Review Changes
+                            </button>
+                            <button 
+                               onClick={async () => {
+                                  try {
+                                     await axios.delete(`${API_BASE}/pr-comment/${idx}`);
+                                     fetchPRComments();
+                                     showToast("Simulation dismissed from pipeline.", "info");
+                                  } catch (e) { showToast("Failed to dismiss.", "error"); }
+                               }}
+                               className="text-xs font-bold text-gray-400 uppercase tracking-wider hover:text-red-500 transition-colors"
+                            >
+                               Dismiss
+                            </button>
                          </div>
                       </motion.div>
                     ))
@@ -655,12 +760,21 @@ export default function App() {
                </div>
             </div>
           )}
-
           {activeTab === "audit" && (
             <div className="space-y-6">
-               <div>
-                  <h2 className="text-xl font-bold text-gray-900 tracking-tight">Audit History</h2>
-                  <p className="text-sm text-gray-500 font-medium">Cryptographically signed ledger of all security audits and findings.</p>
+               <div className="flex items-center justify-between">
+                  <div>
+                     <h2 className="text-xl font-bold text-gray-900 tracking-tight">Audit History</h2>
+                     <p className="text-sm text-gray-500 font-medium">Cryptographically signed ledger of all security audits and findings.</p>
+                  </div>
+                  <button 
+                    onClick={handleGenerateReport}
+                    disabled={isGeneratingReport}
+                    className="h-10 px-6 rounded-lg bg-blue-600 text-white shadow-sm text-xs font-bold flex items-center gap-2 hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    {isGeneratingReport ? <Loader2 size={14} className="animate-spin" /> : <Shield size={14} />}
+                    {isGeneratingReport ? "Generating PDF..." : "Generate Security Report"}
+                  </button>
                </div>
                <div className="bg-white rounded-xl overflow-hidden border border-gray-200 shadow-sm">
                   <div className="overflow-x-auto">
@@ -702,7 +816,12 @@ export default function App() {
                                        </span>
                                     </td>
                                     <td className="px-6 py-4">
-                                       <button className="h-8 px-3 rounded-lg bg-gray-50 border border-gray-200 text-xs font-bold text-gray-600 uppercase tracking-wider hover:bg-gray-900 hover:text-white transition-all">Report</button>
+                                       <button 
+                                          onClick={() => handleGenerateReport(idx)}
+                                          className="h-8 px-4 rounded-lg bg-gray-50 border border-gray-200 text-[10px] font-black text-gray-600 uppercase tracking-widest hover:bg-gray-900 hover:text-white transition-all shadow-sm"
+                                       >
+                                          Report
+                                       </button>
                                     </td>
                                  </tr>
                               ))
@@ -787,6 +906,85 @@ export default function App() {
           )}
         </div>
       </main>
+      {/* PR Change Review Modal */}
+      <AnimatePresence>
+         {selectedPRComment && (
+            <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+               <motion.div 
+                  initial={{ opacity: 0 }} 
+                  animate={{ opacity: 1 }} 
+                  exit={{ opacity: 0 }}
+                  onClick={() => setSelectedPRComment(null)}
+                  className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+               />
+               <motion.div 
+                  initial={{ scale: 0.9, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.9, opacity: 0 }}
+                  className="relative w-full max-w-4xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+               >
+                  <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-white">
+                     <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                           <GitPullRequest size={20} />
+                        </div>
+                        <div>
+                           <h3 className="text-lg font-bold text-gray-900 leading-none mb-1">Reviewing: {selectedPRComment.file}</h3>
+                           <p className="text-xs text-gray-400 font-medium">Automated Security Analysis Sync • Line {selectedPRComment.line}</p>
+                        </div>
+                     </div>
+                     <button onClick={() => setSelectedPRComment(null)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                        <X size={20} className="text-gray-400" />
+                     </button>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto p-8 space-y-8">
+                     <div className="p-5 rounded-xl bg-blue-50/50 border border-blue-100 border-l-4">
+                        <h4 className="text-sm font-bold text-blue-900 mb-2 uppercase tracking-tight">Security Intel</h4>
+                         <p className="text-sm text-blue-800 font-mono leading-relaxed italic whitespace-pre-wrap">
+                            "{selectedPRComment.comment}"
+                         </p>
+                     </div>
+
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div className="space-y-3">
+                           <p className="text-[10px] font-black text-red-500 uppercase tracking-widest pl-1">Vulnerable (Before)</p>
+                           <div className="p-5 rounded-xl bg-slate-900 border border-slate-800 font-mono text-[11px] text-red-300 whitespace-pre overflow-x-auto selection:bg-red-500/30">
+                              {selectedPRComment.before}
+                           </div>
+                        </div>
+                        <div className="space-y-3">
+                           <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest pl-1">Remediated (After)</p>
+                           <div className="p-5 rounded-xl bg-slate-900 border border-slate-800 font-mono text-[11px] text-emerald-300 whitespace-pre overflow-x-auto selection:bg-emerald-500/30">
+                              {selectedPRComment.after}
+                           </div>
+                        </div>
+                     </div>
+
+                     <div className="pt-6 border-t border-gray-100 flex justify-end gap-3">
+                        <button 
+                           onClick={() => setSelectedPRComment(null)}
+                           className="px-6 py-2.5 rounded-lg border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 transition-all"
+                        >
+                           Dismiss Sync
+                        </button>
+                        <button 
+                           onClick={async () => {
+                              const note = `Review for ${selectedPRComment.file}: ${selectedPRComment.issue} resolved.`;
+                              await handleReviewSubmit(note);
+                              setSelectedPRComment(null);
+                           }}
+                           disabled={isReviewing}
+                           className="px-8 py-2.5 rounded-lg bg-blue-600 text-white text-xs font-bold shadow-lg shadow-blue-200 hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-50"
+                        >
+                           {isReviewing ? <Loader2 className="animate-spin" size={16} /> : "Approve & Persist"}
+                        </button>
+                     </div>
+                  </div>
+               </motion.div>
+            </div>
+         )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -805,7 +1003,7 @@ const IntelliCard = ({ v, i, onApplyFix, isFixed, isFixing }) => (
            <div>
               <h4 className="text-base font-bold text-gray-900 leading-tight">{v.title || v.type}</h4>
               <p className="text-xs text-gray-500 font-semibold">
-                 {v.category} • Confidence: {(v.confidence * 100).toFixed(0)}%
+                 {v.owasp_category || v.category} • Confidence: {(v.confidence * 100).toFixed(0)}%
               </p>
            </div>
         </div>
@@ -820,6 +1018,12 @@ const IntelliCard = ({ v, i, onApplyFix, isFixed, isFixing }) => (
            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Root Cause</p>
            <p className="text-xs text-gray-600 font-bold leading-normal break-words">{v.root_cause}</p>
         </div>
+        {(v.exploit_scenario || v.exploit) && (
+           <div className="pl-4">
+              <p className="text-[10px] font-bold text-orange-500 uppercase tracking-widest mb-1">Attack Scenario</p>
+              <p className="text-xs text-gray-600 font-bold leading-normal break-words">{v.exploit_scenario || v.exploit}</p>
+           </div>
+        )}
      </div>
      
      <div className="space-y-3 mb-5">

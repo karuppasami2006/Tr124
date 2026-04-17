@@ -1,45 +1,43 @@
 from typing import List, Dict
 
 def calculate_risk(vulnerabilities: List[Dict]) -> Dict:
+    # Task 1 & 5: Absolute zero reset for PASS state
     if not vulnerabilities:
         return {
             "score": 0,
-            "rating": "Low",
+            "rating": "Safe",
             "status": "PASS",
-            "reason": "Secure baseline achieved. No active threats found."
+            "reason": "Security baseline verified. environment is compliant.",
+            "counts": {"Critical": 0, "High": 0, "Medium": 0, "Low": 0}
         }
 
-    severity_map = {"Critical": 10, "High": 8, "Medium": 5, "Low": 2}
+    # Task 3: severity-based point model (Exact match to requirements)
+    points_map = {"Critical": 10, "High": 5, "Medium": 3, "Low": 1}
     
-    total_score = 0
-    max_severity = "Low"
+    total_points = 0
     counts = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0}
 
+    # Task 8: Iterate only current vulnerabilities (no double counting)
     for v in vulnerabilities:
         sev = v.get("severity", "Medium")
-        total_score += severity_map.get(sev, 5)
+        total_points += points_map.get(sev, 1)
         counts[sev] += 1
-        
-        # Track highest severity
-        if severity_map.get(sev, 0) > severity_map.get(max_severity, 0):
-            max_severity = sev
 
-    avg_score = min(total_score / len(vulnerabilities), 10)
-    
-    # Decision Logic
-    if counts["Critical"] > 0 or counts["High"] > 0:
-        status = "FAIL"
-        reason = f"Pipeline blocked by {counts['Critical']} Critical and {counts['High']} High findings."
-    elif counts["Medium"] > 0:
-        status = "WARNING"
-        reason = "Potential risk detected. Manual approval recommended."
+    # Task 4: Intelligence-weighted normalization
+    # If any Critical issue remains, floor is 10.
+    # Otherwise, linear sum up to 10.
+    if counts["Critical"] > 0:
+        normalized_score = 10
     else:
-        status = "PASS"
-        reason = "Minor issues detected, within tolerance limits."
+        normalized_score = min(10, total_points)
+    
+    # Task 6: Fail condition - binary compliance gate
+    status = "FAIL" if vulnerabilities else "PASS"
+    reason = f"Security pipeline blocked. {len(vulnerabilities)} active threats identified." if vulnerabilities else "Environment secure. Binary compliance met."
 
     return {
-        "score": round(avg_score, 1),
-        "rating": max_severity,
+        "score": normalized_score,
+        "rating": "Critical" if normalized_score >= 10 else "High" if normalized_score >= 5 else "Medium" if normalized_score >= 1 else "Safe",
         "status": status,
         "reason": reason,
         "counts": counts

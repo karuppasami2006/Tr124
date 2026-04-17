@@ -204,8 +204,10 @@ export default function App() {
     try {
       const response = await axios.get(`${API_BASE}/pr-comments`);
       setPrComments(response.data);
-      showToast("PR simulation synced with neural engine.", "success");
-    } catch (e) { console.error(e); }
+    } catch (e) { 
+      console.error(e);
+      showToast("Neural synchronization delay. PR data pending.", "error");
+    }
   };
 
   const fetchReviews = async () => {

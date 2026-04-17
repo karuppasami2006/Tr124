@@ -7,6 +7,7 @@ import {
    savePlatformConfig,
    MOCK_INTELLIGENCE_FEED
 } from './neuralEngine';
+import axios from 'axios';
 import {
    Shield,
    Terminal,
@@ -93,13 +94,36 @@ export default function App() {
       setTopCVEs(MOCK_INTELLIGENCE_FEED);
       setConfig(getPlatformConfig());
       setAuditLogs(getPersistentAuditLogs());
-      fetchPRComments();
+      
+      // Default PR Simulation Hydration
+      setPrComments([
+         {
+            file: "auth.py",
+            line: 12,
+            issue: "Broken Authentication",
+            severity: "Critical",
+            comment: "🚨 **Security Alert**: Detected missing rate limiting on login endpoint. This enables brute-force attacks on user credentials.\n\n**Remediation**: Implement an exponential backoff or use a WAF policy.",
+            before: "def login(): \n    pass",
+            after: "@rate_limit(limit=5, period=60)\ndef login(): \n    pass"
+         },
+         {
+            file: "utils/parsing.py",
+            line: 15,
+            issue: "XSS Vulnerability",
+            severity: "High",
+            comment: "🚨 **Security Alert**: Unsanitized user input is being directly rendered in the UI. This can lead to session hijacking.\n\n**Remediation**: Use a templating engine with auto-escaping or sanitize with Bleach.",
+            before: "return f'<div>{user_input}</div>'",
+            after: "return render_template('msg.html', user_input=user_input)"
+         }
+      ]);
    }, []);
 
    const showToast = (message, type = 'success') => {
       setToast({ message, type });
       setTimeout(() => setToast(null), 3000);
    };
+
+   const API_BASE = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:8000' : '/api');
 
    // Neural Sync: High-fidelity auto-scanning protocol
    useEffect(() => {
@@ -160,7 +184,8 @@ export default function App() {
             severity: v.severity,
             comment: v.explanation,
             before: v.fix?.before || "",
-            after: v.fix?.after || ""
+            after: v.fix?.after || "",
+            raw: v
          }));
          setPrComments(mockComments);
 
@@ -233,10 +258,27 @@ export default function App() {
 
    const handleGenerateReport = async (logIndex = null) => {
       setIsGeneratingReport(true);
-      setTimeout(() => {
-         showToast("Enterprise Security Dossier Generated.", "success");
+      try {
+         const response = await axios.post(`${API_BASE}/generate-report`, { log_index: logIndex }, {
+            responseType: 'blob',
+            headers: { 'Accept': 'application/pdf' }
+         });
+         
+         const url = window.URL.createObjectURL(new Blob([response.data]));
+         const link = document.createElement('a');
+         link.href = url;
+         link.setAttribute('download', `SecureFlow_Audit_${new Date().getTime()}.pdf`);
+         document.body.appendChild(link);
+         link.click();
+         link.remove();
+         
+         showToast("Enterprise Security Dossier Downloaded.", "success");
+      } catch (e) {
+         console.error("Report generation failed", e);
+         showToast("Remote PDF Engine Unresponsive.", "error");
+      } finally {
          setIsGeneratingReport(false);
-      }, 1200);
+      }
    };
 
    return (
@@ -924,6 +966,16 @@ export default function App() {
                               className="px-6 py-2.5 rounded-lg border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 transition-all"
                            >
                               Dismiss Sync
+                           </button>
+                           <button
+                              onClick={async () => {
+                                 await handleApplyFix(selectedPRComment.raw);
+                                 setSelectedPRComment(null);
+                              }}
+                              disabled={isFixing}
+                              className="px-6 py-2.5 rounded-lg bg-emerald-600 text-white text-xs font-bold shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition-all active:scale-95 disabled:opacity-50"
+                           >
+                              {isFixing ? <Loader2 className="animate-spin" size={16} /> : "Deploy Remediation"}
                            </button>
                            <button
                               onClick={async () => {

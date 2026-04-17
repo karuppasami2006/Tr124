@@ -70,6 +70,9 @@ class ConfigUpdateRequest(BaseModel):
     ai_mode: str
     auto_fix: bool
 
+class ReportRequest(BaseModel):
+    log_index: Optional[int] = None
+
 scanner = HybridScanner()
 
 @app.get("/cves/top")
@@ -188,8 +191,9 @@ from reportlab.lib import colors
 
 # Standardized enterprise report generation
 @app.post("/generate-report")
-async def generate_report(log_index: Optional[int] = None):
+async def generate_report(req: ReportRequest):
     try:
+        log_index = req.log_index
         buffer = BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=50, bottomMargin=50)
         styles = getSampleStyleSheet()

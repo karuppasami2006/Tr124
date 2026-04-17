@@ -102,7 +102,7 @@ export default function App() {
     return () => clearTimeout(delayDebounceFn);
   }, [codeDiff, depContent, activeTab]);
 
-  const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:8000' : '/api';
+  const API_BASE = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:8000' : '/api');
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });

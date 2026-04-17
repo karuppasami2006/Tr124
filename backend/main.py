@@ -6,7 +6,16 @@ from scanner import HybridScanner
 import cve_loader
 from datetime import datetime
 
+import sys
+import os
+sys.path.append(os.path.dirname(__file__))
+
 app = FastAPI(title="SecureFlow AI Enterprise API")
+
+@app.get("/")
+@app.get("/api")
+def health_check():
+    return {"status": "online", "message": "SecureFlow AI Neural API is operational", "timestamp": datetime.now()}
 
 app.add_middleware(
     CORSMiddleware,

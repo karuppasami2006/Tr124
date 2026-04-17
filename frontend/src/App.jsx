@@ -382,17 +382,9 @@ export default function App() {
               >
                 <Terminal size={16} />
               </button>
-              <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 bg-gray-50 border border-gray-200 rounded-md">
-                 <Server size={12} className="text-blue-600" />
-                 <span className="text-[10px] text-gray-600 font-semibold tracking-tight">API Engine v3.0</span>
-              </div>
            </div>
            
             <div className="flex items-center gap-4">
-               <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-100 rounded-lg shadow-sm">
-                  <Activity size={12} className="text-blue-600 animate-pulse" />
-                  <span className="text-[10px] text-blue-700 font-bold uppercase tracking-wider">Live Monitoring Active</span>
-               </div>
             </div>
         </header>
 
